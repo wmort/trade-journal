@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Trade Journal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #F7F8FA; --surface: #FFFFFF; --surface-2: #F1F3F6; --border: #DEE2E8;
+    --text: #171A21; --text-dim: #6B7280; --accent: #3B6FE0; --accent-dim: #E8EEFD;
+    --win: #1F9D5C; --win-dim: #E5F6ED; --loss: #D5474C; --loss-dim: #FBEAEA;
+    --be: #B4841F; --be-dim: #FBF3E3; --trail: #7C4FD1; --radius: 7px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0A0C10; --surface: #12151B; --surface-2: #171B22; --border: #262B34;
+      --text: #E6E9EF; --text-dim: #8992A3; --accent: #5C8FFF; --accent-dim: #182338;
+      --win: #35C77B; --win-dim: #122A1D; --loss: #F0575C; --loss-dim: #2C1517;
+      --be: #E0B04A; --be-dim: #2B2210; --trail: #B285F0;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0A0C10; --surface: #12151B; --surface-2: #171B22; --border: #262B34;
+    --text: #E6E9EF; --text-dim: #8992A3; --accent: #5C8FFF; --accent-dim: #182338;
+    --win: #35C77B; --win-dim: #122A1D; --loss: #F0575C; --loss-dim: #2C1517;
+    --be: #E0B04A; --be-dim: #2B2210; --trail: #B285F0;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text); font-family: 'Inter', -apple-system, sans-serif;
+    font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased;
+    padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 20px 80px; }
+  header.top { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 14px; margin-bottom: 20px; }
+  header.top h1 { font-size: 19px; font-weight: 700; margin: 0; }
+  header.top p { margin: 3px 0 0; color: var(--text-dim); font-size: 13px; }
+  .top-actions { display: flex; gap: 8px; }
+  button {
+    font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+    border-radius: var(--radius); border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); padding: 8px 14px;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.ghost { background: transparent; border-color: transparent; color: var(--text-dim); padding: 4px 8px; }
+  button.ghost:hover { color: var(--loss); }
+  button.small { padding: 4px 9px; font-size: 12px; }
+  section.panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; margin-bottom: 16px; }
+  section.panel h2 { font-size: 12px; font-weight: 600; color: var(--text-dim); margin: 0 0 14px; }
+  .stat-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 16px; }
+  .stat { background: var(--surface); padding: 14px 16px; }
+  .stat .label { font-size: 11px; color: var(--text-dim); margin-bottom: 5px; }
+  .stat .value { font-size: 21px; font-weight: 700; font-family: 'IBM Plex Mono', monospace; }
+  .stat .value.win { color: var(--win); } .stat .value.loss { color: var(--loss); }
+  @media (max-width: 760px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
+  .breakdown-grid { display: grid; grid-template-columns: 1fr 1fr 1.4fr; gap: 14px; }
+  @media (max-width: 900px) { .breakdown-grid { grid-template-columns: 1fr; } }
+  table.bd { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.bd th { text-align: left; color: var(--text-dim); font-weight: 500; padding: 5px 6px; border-bottom: 1px solid var(--border); }
+  table.bd td { padding: 6px 6px; border-bottom: 1px solid var(--border); font-family: 'IBM Plex Mono', monospace; }
+  table.bd td.name { font-family: 'Inter', sans-serif; font-weight: 500; }
+  table.bd tr:last-child td { border-bottom: none; }
+  .empty { color: var(--text-dim); font-size: 13px; padding: 20px 0; text-align: center; }
+  svg.equity { width: 100%; height: 160px; display: block; }
+  table.log { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.log th { text-align: left; color: var(--text-dim); font-weight: 500; padding: 8px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  table.log td { padding: 8px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  table.log tbody tr:hover { background: var(--surface-2); }
+  .log-scroll { overflow-x: auto; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .pill.win { background: var(--win-dim); color: var(--win); }
+  .pill.loss { background: var(--loss-dim); color: var(--loss); }
+  .pill.be { background: var(--be-dim); color: var(--be); }
+  .pill.open { background: var(--surface-2); color: var(--text-dim); }
+  .tag { display: inline-block; padding: 1px 7px; border-radius: 20px; font-size: 10.5px; font-weight: 500; margin-right: 3px; background: var(--surface-2); color: var(--text-dim); }
+  .tag.on { background: var(--accent-dim); color: var(--accent); }
+  .dir-long { color: var(--win); font-weight: 600; } .dir-short { color: var(--loss); font-weight: 600; }
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: none; align-items: flex-start; justify-content: flex-end; z-index: 50; }
+  .overlay.open { display: flex; }
+  .drawer { width: min(420px, 100%); height: 100%; background: var(--surface); border-left: 1px solid var(--border); padding: 22px; overflow-y: auto; }
+  .drawer h3 { margin: 0 0 16px; font-size: 15px; }
+  .field { margin-bottom: 13px; }
+  .field label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 5px; }
+  .field input, .field select, .field textarea { width: 100%; padding: 8px 10px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-family: inherit; font-size: 13px; }
+  .field textarea { resize: vertical; min-height: 54px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .checks { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+  .checks label { display: flex; align-items: center; gap: 6px; font-size: 12.5px; }
+  .checks input { width: auto; }
+  .drawer-actions { display: flex; gap: 8px; margin-top: 18px; }
+  .drawer-actions button { flex: 1; }
+  .hint { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+  .setup-banner { background: var(--accent-dim); border: 1px solid var(--accent); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px; }
+  .setup-banner input { width: 100%; padding: 8px 10px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; margin-top: 8px; }
+  .status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; }
+  .status-dot.ok { background: var(--win); } .status-dot.err { background: var(--loss); } .status-dot.wait { background: var(--be); }
+  footer { text-align: center; color: var(--text-dim); font-size: 11.5px; margin-top: 30px; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Trade Journal</h1>
+      <p id="subtitle">Not connected yet.</p>
+    </div>
+    <div class="top-actions">
+      <button id="settingsBtn">Settings</button>
+      <button id="refreshBtn">Refresh</button>
+      <button class="primary" id="newTradeBtn">+ Log trade</button>
+    </div>
+  </header>
+
+  <div class="setup-banner" id="setupBanner" style="display:none;">
+    <strong>One-time setup:</strong> paste your Google Apps Script Web App URL below (the one ending in <code>/exec</code>). This is also the URL you use as the Webhook URL in your TradingView alerts.
+    <input type="text" id="backendUrlInput" placeholder="https://script.google.com/macros/s/XXXXXXXX/exec">
+    <div style="margin-top:10px;"><button class="primary" id="saveUrlBtn">Save</button></div>
+  </div>
+
+  <div class="stat-grid" id="statGrid"></div>
+
+  <section class="panel">
+    <h2>Equity curve — cumulative R</h2>
+    <div id="equityWrap"><div class="empty">Log a few closed trades to see your curve.</div></div>
+  </section>
+
+  <section class="panel">
+    <h2>Breakdown</h2>
+    <div class="breakdown-grid">
+      <div><table class="bd"><thead><tr><th>Setup</th><th>N</th><th>Win%</th><th>Avg R</th></tr></thead><tbody id="bdSetup"></tbody></table></div>
+      <div><table class="bd"><thead><tr><th>Direction</th><th>N</th><th>Win%</th><th>Avg R</th></tr></thead><tbody id="bdDirection"></tbody></table></div>
+      <div><table class="bd"><thead><tr><th>Confluence</th><th>N</th><th>Win%</th><th>Avg R</th></tr></thead><tbody id="bdConfluence"></tbody></table></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Trade log</h2>
+    <div class="log-scroll">
+      <table class="log">
+        <thead><tr><th>Date</th><th>Symbol</th><th>Setup</th><th>Dir</th><th>Entry</th><th>Stop</th><th>Target</th><th>Exit</th><th>R</th><th>Result</th><th>Confluence</th><th></th></tr></thead>
+        <tbody id="logBody"></tbody>
+      </table>
+      <div class="empty" id="logEmpty" style="display:none;">No trades yet. They'll appear automatically once TradingView alerts start firing, or add one manually.</div>
+    </div>
+  </section>
+
+  <footer><span class="status-dot" id="statusDot"></span><span id="statusText">Not connected</span></footer>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="drawer">
+    <h3 id="drawerTitle">Log a trade</h3>
+    <form id="tradeForm">
+      <div class="row2">
+        <div class="field"><label>Date</label><input type="date" id="f_date" required></div>
+        <div class="field"><label>Time (optional)</label><input type="time" id="f_time"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Symbol</label><input type="text" id="f_symbol" placeholder="e.g. NQ, ES, SPY" required></div>
+        <div class="field"><label>Direction</label><select id="f_direction"><option value="long">Long</option><option value="short">Short</option></select></div>
+      </div>
+      <div class="field"><label>Setup type</label>
+        <select id="f_setup"><option value="SCE">SCE (standard / valid engulfing)</option><option value="FAIL">Failure (weak engulfing fade)</option><option value="SMT">SMT Reversal (manipulation + displacement)</option></select>
+      </div>
+      <div class="row3">
+        <div class="field"><label>Entry</label><input type="number" step="any" id="f_entry"></div>
+        <div class="field"><label>Stop</label><input type="number" step="any" id="f_stop"></div>
+        <div class="field"><label>Target</label><input type="number" step="any" id="f_target"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Exit (leave blank if still open)</label><input type="number" step="any" id="f_exit"></div>
+        <div class="field"><label>Result override</label><select id="f_result"><option value="">Auto from R</option><option value="win">Win</option><option value="loss">Loss</option><option value="be">Breakeven</option></select></div>
+      </div>
+      <div class="field">
+        <label>Confluences active on this trade</label>
+        <div class="checks">
+          <label><input type="checkbox" id="f_trend"> Trend aligned</label>
+          <label><input type="checkbox" id="f_fvg"> FVG aligned</label>
+          <label><input type="checkbox" id="f_session"> In session</label>
+          <label><input type="checkbox" id="f_trail"> Trailing stop used</label>
+        </div>
+      </div>
+      <div class="field"><label>Notes</label><textarea id="f_notes"></textarea></div>
+      <div class="drawer-actions">
+        <button type="button" id="cancelBtn">Cancel</button>
+        <button type="submit" class="primary" id="saveBtn">Save trade</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const STORAGE_KEY = 'tj_backend_url';
+  let backendUrl = localStorage.getItem(STORAGE_KEY) || '';
+  let trades = [];
+  let editingId = null;
+  let pollTimer = null;
+
+  function todayStr() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+
+  function setStatus(state, text) {
+    $('statusDot').className = 'status-dot ' + state;
+    $('statusText').textContent = text;
+  }
+
+  function showSetupBanner(show) {
+    $('setupBanner').style.display = show ? 'block' : 'none';
+  }
+
+  if (!backendUrl) {
+    showSetupBanner(true);
+    setStatus('wait', 'Waiting for backend URL');
+  } else {
+    $('subtitle').textContent = 'Connected to your Google Sheet backend.';
+  }
+
+  $('settingsBtn').addEventListener('click', () => {
+    $('backendUrlInput').value = backendUrl;
+    showSetupBanner(true);
+  });
+  $('saveUrlBtn').addEventListener('click', () => {
+    const v = $('backendUrlInput').value.trim();
+    if (!v) return;
+    backendUrl = v;
+    localStorage.setItem(STORAGE_KEY, v);
+    showSetupBanner(false);
+    $('subtitle').textContent = 'Connected to your Google Sheet backend.';
+    loadTrades();
+  });
+
+  async function loadTrades() {
+    if (!backendUrl) return;
+    setStatus('wait', 'Loading…');
+    try {
+      const res = await fetch(backendUrl, { method: 'GET' });
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        trades = data;
+        setStatus('ok', 'Connected · last updated ' + new Date().toLocaleTimeString());
+        render();
+      } else {
+        setStatus('err', 'Backend returned an unexpected response');
+      }
+    } catch (err) {
+      console.error(err);
+      setStatus('err', 'Could not reach backend — check the URL in Settings');
+    }
+  }
+
+  $('refreshBtn').addEventListener('click', loadTrades);
+
+  function startPolling() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(loadTrades, 45000);
+  }
+
+  // ---------- computation helpers (same logic as the claude.ai journal) ----------
+  function toBool(v) { return v === true || v === 'true' || v === 'TRUE' || v === 1 || v === '1'; }
+  function computeR(t) {
+    const entry = parseFloat(t.entry), stop = parseFloat(t.stop), exit = parseFloat(t.exit);
+    if (t.r !== undefined && t.r !== '' && t.r !== null && !isNaN(parseFloat(t.r))) return parseFloat(t.r);
+    if (isNaN(entry) || isNaN(stop) || isNaN(exit)) return null;
+    const risk = Math.abs(entry - stop);
+    if (risk === 0) return null;
+    const reward = t.direction === 'long' ? (exit - entry) : (entry - exit);
+    return reward / risk;
+  }
+  function computeResult(t, r) {
+    if (t.result) return t.result;
+    if (r === null || r === undefined) return t.status === 'open' ? 'open' : 'open';
+    if (r > 0.02) return 'win';
+    if (r < -0.02) return 'loss';
+    return 'be';
+  }
+  function enriched() {
+    return trades.map(t => {
+      const r = computeR(t);
+      const result = computeResult(t, r);
+      return Object.assign({}, t, { r, result });
+    });
+  }
+  function fmtR(r) { return r === null || r === undefined ? '—' : (r >= 0 ? '+' : '') + r.toFixed(2) + 'R'; }
+  function fmtPrice(p) { return p === null || p === undefined || p === '' ? '—' : Number(p).toFixed(2); }
+
+  function statsFor(list) {
+    const closed = list.filter(t => t.result === 'win' || t.result === 'loss' || t.result === 'be');
+    const wins = closed.filter(t => t.result === 'win');
+    const losses = closed.filter(t => t.result === 'loss');
+    const withR = closed.filter(t => t.r !== null && t.r !== undefined);
+    const n = closed.length;
+    const winRate = n ? (wins.length / n * 100) : null;
+    const avgR = withR.length ? (withR.reduce((s,t)=>s+t.r,0) / withR.length) : null;
+    const grossWin = withR.filter(t=>t.r>0).reduce((s,t)=>s+t.r,0);
+    const grossLoss = Math.abs(withR.filter(t=>t.r<0).reduce((s,t)=>s+t.r,0));
+    const profitFactor = grossLoss > 0 ? (grossWin / grossLoss) : (grossWin > 0 ? Infinity : null);
+    return { n, wins: wins.length, losses: losses.length, winRate, avgR, profitFactor };
+  }
+
+  function render() {
+    const list = enriched();
+    renderStats(list); renderEquity(list); renderBreakdowns(list); renderLog(list);
+  }
+
+  function renderStats(list) {
+    const s = statsFor(list);
+    const winRateStr = s.winRate === null ? '—' : s.winRate.toFixed(0) + '%';
+    const avgRStr = s.avgR === null ? '—' : fmtR(s.avgR);
+    const pfStr = s.profitFactor === null ? '—' : (s.profitFactor === Infinity ? '∞' : s.profitFactor.toFixed(2));
+    $('statGrid').innerHTML = `
+      <div class="stat"><div class="label">Closed trades</div><div class="value">${s.n}</div></div>
+      <div class="stat"><div class="label">Win rate</div><div class="value ${s.winRate>=50?'win':(s.winRate!==null?'loss':'')}">${winRateStr}</div></div>
+      <div class="stat"><div class="label">Avg R</div><div class="value ${s.avgR>0?'win':(s.avgR<0?'loss':'')}">${avgRStr}</div></div>
+      <div class="stat"><div class="label">Profit factor</div><div class="value">${pfStr}</div></div>
+      <div class="stat"><div class="label">Wins / Losses</div><div class="value"><span style="color:var(--win)">${s.wins}</span> / <span style="color:var(--loss)">${s.losses}</span></div></div>`;
+  }
+
+  function renderEquity(list) {
+    const closed = list.filter(t => (t.result==='win'||t.result==='loss'||t.result==='be') && t.r !== null)
+      .slice().sort((a,b) => String(a.date+(a.time||'')).localeCompare(String(b.date+(b.time||''))));
+    const wrap = $('equityWrap');
+    if (closed.length < 2) { wrap.innerHTML = '<div class="empty">Log a few closed trades to see your curve.</div>'; return; }
+    let cum = 0;
+    const pts = closed.map(t => { cum += t.r; return cum; });
+    const w = 1000, h = 150, pad = 8;
+    const minV = Math.min(0, ...pts), maxV = Math.max(0, ...pts);
+    const range = (maxV - minV) || 1;
+    const x = i => pad + (i / (pts.length - 1)) * (w - pad*2);
+    const y = v => h - pad - ((v - minV) / range) * (h - pad*2);
+    const path = pts.map((v,i) => (i===0?'M':'L') + x(i).toFixed(1) + ',' + y(v).toFixed(1)).join(' ');
+    const last = pts[pts.length-1];
+    wrap.innerHTML = `<svg class="equity" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+      <line x1="0" y1="${y(0).toFixed(1)}" x2="${w}" y2="${y(0).toFixed(1)}" stroke="var(--border)" stroke-width="1"/>
+      <path d="${path}" fill="none" stroke="${last>=0?'var(--win)':'var(--loss)'}" stroke-width="2"/></svg>`;
+  }
+
+  function breakdownRows(groups) {
+    return Object.keys(groups).map(name => {
+      const s = statsFor(groups[name]);
+      const wr = s.winRate === null ? '—' : s.winRate.toFixed(0) + '%';
+      const ar = s.avgR === null ? '—' : fmtR(s.avgR);
+      return `<tr><td class="name">${name}</td><td>${s.n}</td><td>${wr}</td><td>${ar}</td></tr>`;
+    }).join('');
+  }
+
+  function renderBreakdowns(list) {
+    $('bdSetup').innerHTML = breakdownRows({
+      'SCE': list.filter(t => t.strategy === 'SCE'),
+      'Failure': list.filter(t => t.strategy === 'FAIL'),
+      'SMT Reversal': list.filter(t => t.strategy === 'SMT'),
+    }) || '<tr><td class="empty" colspan="4">No data yet</td></tr>';
+
+    $('bdDirection').innerHTML = breakdownRows({
+      'Long': list.filter(t => t.direction === 'long'),
+      'Short': list.filter(t => t.direction === 'short'),
+    }) || '<tr><td class="empty" colspan="4">No data yet</td></tr>';
+
+    $('bdConfluence').innerHTML = [
+      ['Trend aligned', 'trendAligned'], ['FVG aligned', 'fvgAligned'],
+      ['In session', 'inSession'], ['Trail used', 'usedTrail'],
+    ].map(([label, key]) => {
+      const yes = statsFor(list.filter(t => toBool(t[key])));
+      const no = statsFor(list.filter(t => !toBool(t[key])));
+      const wrYes = yes.winRate === null ? '—' : yes.winRate.toFixed(0) + '%';
+      const wrNo = no.winRate === null ? '—' : no.winRate.toFixed(0) + '%';
+      return `<tr><td class="name">${label}</td><td>${yes.n} / ${no.n}</td><td>${wrYes} vs ${wrNo}</td><td>${yes.avgR===null?'—':fmtR(yes.avgR)}</td></tr>`;
+    }).join('');
+  }
+
+  function renderLog(list) {
+    const body = $('logBody'), empty = $('logEmpty');
+    if (!list.length) { body.innerHTML = ''; empty.style.display = 'block'; return; }
+    empty.style.display = 'none';
+    const sorted = list.slice().sort((a,b) => String(b.date+(b.time||'')).localeCompare(String(a.date+(a.time||''))));
+    body.innerHTML = sorted.map(t => {
+      const pillClass = t.result === 'win' ? 'win' : t.result === 'loss' ? 'loss' : t.result === 'be' ? 'be' : 'open';
+      const pillLabel = t.result === 'win' ? 'Win' : t.result === 'loss' ? 'Loss' : t.result === 'be' ? 'BE' : 'Open';
+      const confl = [
+        toBool(t.trendAligned) ? '<span class="tag on">Trend</span>' : '',
+        toBool(t.fvgAligned) ? '<span class="tag on">FVG</span>' : '',
+        toBool(t.inSession) ? '<span class="tag on">Session</span>' : '',
+        toBool(t.usedTrail) ? '<span class="tag on">Trail</span>' : '',
+      ].join('') || '<span class="tag">—</span>';
+      return `<tr>
+        <td>${t.date || '—'}${t.time ? ' '+t.time : ''}</td>
+        <td>${t.symbol || '—'}</td>
+        <td>${t.strategy || '—'}</td>
+        <td class="${t.direction==='long'?'dir-long':'dir-short'}">${t.direction==='long'?'Long':'Short'}</td>
+        <td class="mono">${fmtPrice(t.entry)}</td>
+        <td class="mono">${fmtPrice(t.stop)}</td>
+        <td class="mono">${fmtPrice(t.target)}</td>
+        <td class="mono">${fmtPrice(t.exit)}</td>
+        <td class="mono">${fmtR(t.r)}</td>
+        <td><span class="pill ${pillClass}">${pillLabel}</span></td>
+        <td>${confl}</td>
+        <td><button class="ghost small edit-btn" data-id="${t.tradeId}">Edit</button><button class="ghost small del-btn" data-id="${t.tradeId}">Delete</button></td>
+      </tr>`;
+    }).join('');
+    body.querySelectorAll('.edit-btn').forEach(b => b.addEventListener('click', () => openEdit(b.dataset.id)));
+    body.querySelectorAll('.del-btn').forEach(b => b.addEventListener('click', () => deleteTrade(b.dataset.id)));
+  }
+
+  // ---------- drawer / form ----------
+  function openNew() {
+    editingId = null;
+    $('drawerTitle').textContent = 'Log a trade';
+    $('tradeForm').reset();
+    $('f_date').value = todayStr();
+    $('overlay').classList.add('open');
+  }
+  function openEdit(id) {
+    const t = trades.find(x => String(x.tradeId) === String(id));
+    if (!t) return;
+    editingId = id;
+    $('drawerTitle').textContent = 'Edit trade';
+    $('f_date').value = t.date || todayStr();
+    $('f_time').value = t.time || '';
+    $('f_symbol').value = t.symbol || '';
+    $('f_direction').value = t.direction || 'long';
+    $('f_setup').value = t.strategy || 'SCE';
+    $('f_entry').value = t.entry ?? '';
+    $('f_stop').value = t.stop ?? '';
+    $('f_target').value = t.target ?? '';
+    $('f_exit').value = t.exit ?? '';
+    $('f_result').value = t.result || '';
+    $('f_trend').checked = toBool(t.trendAligned);
+    $('f_fvg').checked = toBool(t.fvgAligned);
+    $('f_session').checked = toBool(t.inSession);
+    $('f_trail').checked = toBool(t.usedTrail);
+    $('f_notes').value = t.notes || '';
+    $('overlay').classList.add('open');
+  }
+  function closeDrawer() { $('overlay').classList.remove('open'); editingId = null; }
+
+  $('newTradeBtn').addEventListener('click', openNew);
+  $('cancelBtn').addEventListener('click', closeDrawer);
+  $('overlay').addEventListener('click', (e) => { if (e.target.id === 'overlay') closeDrawer(); });
+
+  function numOrEmpty(v) { return v === '' || v === null || v === undefined ? '' : Number(v); }
+
+  async function postToBackend(payload) {
+    return fetch(backendUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids a CORS preflight to Apps Script
+      body: JSON.stringify(payload),
+    });
+  }
+
+  $('tradeForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!backendUrl) { showSetupBanner(true); return; }
+    const payload = {
+      tradeId: editingId || undefined,
+      date: $('f_date').value,
+      time: $('f_time').value || '',
+      symbol: $('f_symbol').value.trim().toUpperCase(),
+      direction: $('f_direction').value,
+      strategy: $('f_setup').value,
+      entry: numOrEmpty($('f_entry').value),
+      stop: numOrEmpty($('f_stop').value),
+      target: numOrEmpty($('f_target').value),
+      exit: numOrEmpty($('f_exit').value),
+      result: $('f_result').value || '',
+      status: $('f_exit').value ? 'closed' : 'open',
+      trendAligned: $('f_trend').checked,
+      fvgAligned: $('f_fvg').checked,
+      inSession: $('f_session').checked,
+      usedTrail: $('f_trail').checked,
+      notes: $('f_notes').value.trim(),
+      source: 'manual',
+    };
+    $('saveBtn').disabled = true;
+    try {
+      await postToBackend(payload);
+      closeDrawer();
+      setTimeout(loadTrades, 800); // give the Sheet a moment to update
+    } catch (err) {
+      console.error(err);
+      alert('Could not save trade — check your backend URL in Settings.');
+    } finally {
+      $('saveBtn').disabled = false;
+    }
+  });
+
+  async function deleteTrade(id) {
+    if (!confirm('Delete this trade?')) return;
+    try {
+      await postToBackend({ action: 'delete', tradeId: id });
+      setTimeout(loadTrades, 800);
+    } catch (err) {
+      console.error(err);
+      alert('Could not delete trade.');
+    }
+  }
+
+  if (backendUrl) loadTrades();
+  startPolling();
+})();
+</script>
+</body>
+</html>
