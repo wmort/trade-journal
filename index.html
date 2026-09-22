@@ -53,12 +53,13 @@
   button.small { padding: 4px 9px; font-size: 12px; }
   section.panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; margin-bottom: 16px; }
   section.panel h2 { font-size: 12px; font-weight: 600; color: var(--text-dim); margin: 0 0 14px; }
-  .stat-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 16px; }
+  .stat-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 16px; }
   .stat { background: var(--surface); padding: 14px 16px; }
   .stat .label { font-size: 11px; color: var(--text-dim); margin-bottom: 5px; }
   .stat .value { font-size: 21px; font-weight: 700; font-family: 'IBM Plex Mono', monospace; }
   .stat .value.win { color: var(--win); } .stat .value.loss { color: var(--loss); }
-  @media (max-width: 760px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 900px) { .stat-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 560px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
   .breakdown-grid { display: grid; grid-template-columns: 1fr 1fr 1.4fr; gap: 14px; }
   @media (max-width: 900px) { .breakdown-grid { grid-template-columns: 1fr; } }
   table.bd { width: 100%; border-collapse: collapse; font-size: 12.5px; }
@@ -101,11 +102,17 @@
   .setup-banner input { width: 100%; padding: 8px 10px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); color: var(--text); font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; margin-top: 8px; }
   .status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; }
   .status-dot.ok { background: var(--win); } .status-dot.err { background: var(--loss); } .status-dot.wait { background: var(--be); }
+  .tab-btn { flex: 0 0 auto; }
+  .tab-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .rank-1 { color: #D4AF37; font-weight: 700; }
+  .rank-2 { color: #A8A8A8; font-weight: 700; }
+  .rank-3 { color: #B08D57; font-weight: 700; }
+  tr.me { background: var(--accent-dim); }
   footer { text-align: center; color: var(--text-dim); font-size: 11.5px; margin-top: 30px; }
 </style>
 </head>
 <body>
-
+ 
 <div class="wrap">
   <header class="top">
     <div>
@@ -118,43 +125,70 @@
       <button class="primary" id="newTradeBtn">+ Log trade</button>
     </div>
   </header>
-
+ 
   <div class="setup-banner" id="setupBanner" style="display:none;">
     <strong>One-time setup:</strong> paste your Google Apps Script Web App URL below (the one ending in <code>/exec</code>). This is also the URL you use as the Webhook URL in your TradingView alerts.
     <input type="text" id="backendUrlInput" placeholder="https://script.google.com/macros/s/XXXXXXXX/exec">
+    <div class="hint" style="margin-top:12px;"><strong>Your name</strong> — shown on the shared leaderboard, and used to filter "My Trades" to just your own. Make it unique from everyone else in the group.</div>
+    <input type="text" id="traderNameInput" placeholder="e.g. Alex">
+    <div class="hint" style="margin-top:12px;"><strong>Profit tracker</strong> — dollar value per point of your instrument, and how many contracts you trade. NQ = $20/point. Used to convert entry/exit prices into real $ P&L.</div>
+    <div class="row2" style="margin-top:8px;">
+      <input type="number" step="any" id="pointValueInput" placeholder="Point value ($), e.g. 20">
+      <input type="number" step="any" id="contractsInput" placeholder="Contracts, e.g. 1">
+    </div>
     <div style="margin-top:10px;"><button class="primary" id="saveUrlBtn">Save</button></div>
   </div>
-
-  <div class="stat-grid" id="statGrid"></div>
-
-  <section class="panel">
-    <h2>Equity curve — cumulative R</h2>
-    <div id="equityWrap"><div class="empty">Log a few closed trades to see your curve.</div></div>
-  </section>
-
-  <section class="panel">
-    <h2>Breakdown</h2>
-    <div class="breakdown-grid">
-      <div><table class="bd"><thead><tr><th>Setup</th><th>N</th><th>Win%</th><th>Avg R</th></tr></thead><tbody id="bdSetup"></tbody></table></div>
-      <div><table class="bd"><thead><tr><th>Direction</th><th>N</th><th>Win%</th><th>Avg R</th></tr></thead><tbody id="bdDirection"></tbody></table></div>
-      <div><table class="bd"><thead><tr><th>Confluence</th><th>N</th><th>Win%</th><th>Avg R</th></tr></thead><tbody id="bdConfluence"></tbody></table></div>
-    </div>
-  </section>
-
-  <section class="panel">
-    <h2>Trade log</h2>
-    <div class="log-scroll">
-      <table class="log">
-        <thead><tr><th>Date</th><th>Symbol</th><th>Setup</th><th>Dir</th><th>Entry</th><th>Stop</th><th>Target</th><th>Exit</th><th>R</th><th>Result</th><th>Confluence</th><th></th></tr></thead>
-        <tbody id="logBody"></tbody>
-      </table>
-      <div class="empty" id="logEmpty" style="display:none;">No trades yet. They'll appear automatically once TradingView alerts start firing, or add one manually.</div>
-    </div>
-  </section>
-
+ 
+  <div class="tabbar" id="tabbar" style="display:flex; gap:8px; margin-bottom:16px;">
+    <button id="tabMine" class="tab-btn">My Trades</button>
+    <button id="tabLeaderboard" class="tab-btn">Leaderboard</button>
+  </div>
+ 
+  <div id="mineView">
+    <div class="stat-grid" id="statGrid"></div>
+ 
+    <section class="panel">
+      <h2>Equity curve — cumulative R</h2>
+      <div id="equityWrap"><div class="empty">Log a few closed trades to see your curve.</div></div>
+    </section>
+ 
+    <section class="panel">
+      <h2>Breakdown</h2>
+      <div class="breakdown-grid">
+        <div><table class="bd"><thead><tr><th>Setup</th><th>N</th><th>Win%</th><th>Avg R</th></tr></thead><tbody id="bdSetup"></tbody></table></div>
+        <div><table class="bd"><thead><tr><th>Direction</th><th>N</th><th>Win%</th><th>Avg R</th></tr></thead><tbody id="bdDirection"></tbody></table></div>
+        <div><table class="bd"><thead><tr><th>Confluence</th><th>N</th><th>Win%</th><th>Avg R</th></tr></thead><tbody id="bdConfluence"></tbody></table></div>
+      </div>
+    </section>
+ 
+    <section class="panel">
+      <h2>Trade log</h2>
+      <div class="log-scroll">
+        <table class="log">
+          <thead><tr><th>Date</th><th>Symbol</th><th>Setup</th><th>Dir</th><th>Entry</th><th>Stop</th><th>Target</th><th>Exit</th><th>R</th><th>P&amp;L</th><th>Result</th><th>Confluence</th><th></th></tr></thead>
+          <tbody id="logBody"></tbody>
+        </table>
+        <div class="empty" id="logEmpty" style="display:none;">No trades yet. They'll appear automatically once TradingView alerts start firing, or add one manually.</div>
+      </div>
+    </section>
+  </div>
+ 
+  <div id="leaderboardView" style="display:none;">
+    <section class="panel">
+      <h2>Group leaderboard — ranked by total R</h2>
+      <div class="log-scroll">
+        <table class="log">
+          <thead><tr><th>#</th><th>Trader</th><th>Trades</th><th>Win%</th><th>Avg R</th><th>Total R</th></tr></thead>
+          <tbody id="leaderboardBody"></tbody>
+        </table>
+        <div class="empty" id="leaderboardEmpty" style="display:none;">No trades logged by anyone yet.</div>
+      </div>
+    </section>
+  </div>
+ 
   <footer><span class="status-dot" id="statusDot"></span><span id="statusText">Not connected</span></footer>
 </div>
-
+ 
 <div class="overlay" id="overlay">
   <div class="drawer">
     <h3 id="drawerTitle">Log a trade</h3>
@@ -196,39 +230,47 @@
     </form>
   </div>
 </div>
-
+ 
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
   const STORAGE_KEY = 'tj_backend_url';
+  const POINT_VALUE_KEY = 'tj_point_value';
+  const CONTRACTS_KEY = 'tj_contracts';
   let backendUrl = localStorage.getItem(STORAGE_KEY) || '';
+  let pointValue = parseFloat(localStorage.getItem(POINT_VALUE_KEY)) || 20; // NQ default
+  let contracts = parseFloat(localStorage.getItem(CONTRACTS_KEY)) || 1;
   let trades = [];
   let editingId = null;
   let pollTimer = null;
-
+ 
   function todayStr() {
     const d = new Date();
     return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
   }
-
+ 
   function setStatus(state, text) {
     $('statusDot').className = 'status-dot ' + state;
     $('statusText').textContent = text;
   }
-
+ 
   function showSetupBanner(show) {
     $('setupBanner').style.display = show ? 'block' : 'none';
   }
-
+ 
   if (!backendUrl) {
     showSetupBanner(true);
     setStatus('wait', 'Waiting for backend URL');
+    $('pointValueInput').value = pointValue;
+    $('contractsInput').value = contracts;
   } else {
     $('subtitle').textContent = 'Connected to your Google Sheet backend.';
   }
-
+ 
   $('settingsBtn').addEventListener('click', () => {
     $('backendUrlInput').value = backendUrl;
+    $('pointValueInput').value = pointValue;
+    $('contractsInput').value = contracts;
     showSetupBanner(true);
   });
   $('saveUrlBtn').addEventListener('click', () => {
@@ -236,11 +278,15 @@
     if (!v) return;
     backendUrl = v;
     localStorage.setItem(STORAGE_KEY, v);
+    const pv = parseFloat($('pointValueInput').value);
+    if (!isNaN(pv) && pv > 0) { pointValue = pv; localStorage.setItem(POINT_VALUE_KEY, String(pv)); }
+    const ct = parseFloat($('contractsInput').value);
+    if (!isNaN(ct) && ct > 0) { contracts = ct; localStorage.setItem(CONTRACTS_KEY, String(ct)); }
     showSetupBanner(false);
     $('subtitle').textContent = 'Connected to your Google Sheet backend.';
     loadTrades();
   });
-
+ 
   async function loadTrades() {
     if (!backendUrl) return;
     setStatus('wait', 'Loading…');
@@ -259,14 +305,14 @@
       setStatus('err', 'Could not reach backend — check the URL in Settings');
     }
   }
-
+ 
   $('refreshBtn').addEventListener('click', loadTrades);
-
+ 
   function startPolling() {
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = setInterval(loadTrades, 45000);
   }
-
+ 
   // ---------- computation helpers (same logic as the claude.ai journal) ----------
   function toBool(v) { return v === true || v === 'true' || v === 'TRUE' || v === 1 || v === '1'; }
   function computeR(t) {
@@ -285,48 +331,63 @@
     if (r < -0.02) return 'loss';
     return 'be';
   }
+  // Exact $ P&L per trade, computed from the actual logged entry/exit prices —
+  // NOT derived from R, so it stays accurate even though stop distance (and
+  // therefore $ risk) varies trade to trade with a fixed contract count.
+  function computeDollarPL(t) {
+    const entry = parseFloat(t.entry), exit = parseFloat(t.exit);
+    if (isNaN(entry) || isNaN(exit)) return null;
+    const pointsMoved = t.direction === 'long' ? (exit - entry) : (entry - exit);
+    return pointsMoved * pointValue * contracts;
+  }
   function enriched() {
     return trades.map(t => {
       const r = computeR(t);
       const result = computeResult(t, r);
-      return Object.assign({}, t, { r, result });
+      const dollarPL = computeDollarPL(t);
+      return Object.assign({}, t, { r, result, dollarPL });
     });
   }
   function fmtR(r) { return r === null || r === undefined ? '—' : (r >= 0 ? '+' : '') + r.toFixed(2) + 'R'; }
   function fmtPrice(p) { return p === null || p === undefined || p === '' ? '—' : Number(p).toFixed(2); }
-
+  function fmtDollar(v) { return v === null || v === undefined ? '—' : (v >= 0 ? '+$' : '-$') + Math.abs(v).toFixed(2); }
+ 
   function statsFor(list) {
     const closed = list.filter(t => t.result === 'win' || t.result === 'loss' || t.result === 'be');
     const wins = closed.filter(t => t.result === 'win');
     const losses = closed.filter(t => t.result === 'loss');
     const withR = closed.filter(t => t.r !== null && t.r !== undefined);
+    const withDollar = closed.filter(t => t.dollarPL !== null && t.dollarPL !== undefined);
     const n = closed.length;
     const winRate = n ? (wins.length / n * 100) : null;
     const avgR = withR.length ? (withR.reduce((s,t)=>s+t.r,0) / withR.length) : null;
+    const totalDollar = withDollar.length ? withDollar.reduce((s,t)=>s+t.dollarPL,0) : null;
     const grossWin = withR.filter(t=>t.r>0).reduce((s,t)=>s+t.r,0);
     const grossLoss = Math.abs(withR.filter(t=>t.r<0).reduce((s,t)=>s+t.r,0));
     const profitFactor = grossLoss > 0 ? (grossWin / grossLoss) : (grossWin > 0 ? Infinity : null);
-    return { n, wins: wins.length, losses: losses.length, winRate, avgR, profitFactor };
+    return { n, wins: wins.length, losses: losses.length, winRate, avgR, profitFactor, totalDollar };
   }
-
+ 
   function render() {
     const list = enriched();
     renderStats(list); renderEquity(list); renderBreakdowns(list); renderLog(list);
   }
-
+ 
   function renderStats(list) {
     const s = statsFor(list);
     const winRateStr = s.winRate === null ? '—' : s.winRate.toFixed(0) + '%';
     const avgRStr = s.avgR === null ? '—' : fmtR(s.avgR);
     const pfStr = s.profitFactor === null ? '—' : (s.profitFactor === Infinity ? '∞' : s.profitFactor.toFixed(2));
+    const dollarStr = s.totalDollar === null ? '—' : fmtDollar(s.totalDollar);
     $('statGrid').innerHTML = `
       <div class="stat"><div class="label">Closed trades</div><div class="value">${s.n}</div></div>
       <div class="stat"><div class="label">Win rate</div><div class="value ${s.winRate>=50?'win':(s.winRate!==null?'loss':'')}">${winRateStr}</div></div>
       <div class="stat"><div class="label">Avg R</div><div class="value ${s.avgR>0?'win':(s.avgR<0?'loss':'')}">${avgRStr}</div></div>
       <div class="stat"><div class="label">Profit factor</div><div class="value">${pfStr}</div></div>
-      <div class="stat"><div class="label">Wins / Losses</div><div class="value"><span style="color:var(--win)">${s.wins}</span> / <span style="color:var(--loss)">${s.losses}</span></div></div>`;
+      <div class="stat"><div class="label">Wins / Losses</div><div class="value"><span style="color:var(--win)">${s.wins}</span> / <span style="color:var(--loss)">${s.losses}</span></div></div>
+      <div class="stat"><div class="label">Total P&amp;L (${contracts}x NQ)</div><div class="value ${s.totalDollar>0?'win':(s.totalDollar<0?'loss':'')}">${dollarStr}</div></div>`;
   }
-
+ 
   function renderEquity(list) {
     const closed = list.filter(t => (t.result==='win'||t.result==='loss'||t.result==='be') && t.r !== null)
       .slice().sort((a,b) => String(a.date+(a.time||'')).localeCompare(String(b.date+(b.time||''))));
@@ -345,7 +406,7 @@
       <line x1="0" y1="${y(0).toFixed(1)}" x2="${w}" y2="${y(0).toFixed(1)}" stroke="var(--border)" stroke-width="1"/>
       <path d="${path}" fill="none" stroke="${last>=0?'var(--win)':'var(--loss)'}" stroke-width="2"/></svg>`;
   }
-
+ 
   function breakdownRows(groups) {
     return Object.keys(groups).map(name => {
       const s = statsFor(groups[name]);
@@ -354,19 +415,19 @@
       return `<tr><td class="name">${name}</td><td>${s.n}</td><td>${wr}</td><td>${ar}</td></tr>`;
     }).join('');
   }
-
+ 
   function renderBreakdowns(list) {
     $('bdSetup').innerHTML = breakdownRows({
       'SCE': list.filter(t => t.strategy === 'SCE'),
       'Failure': list.filter(t => t.strategy === 'FAIL'),
       'SMT Reversal': list.filter(t => t.strategy === 'SMT'),
     }) || '<tr><td class="empty" colspan="4">No data yet</td></tr>';
-
+ 
     $('bdDirection').innerHTML = breakdownRows({
       'Long': list.filter(t => t.direction === 'long'),
       'Short': list.filter(t => t.direction === 'short'),
     }) || '<tr><td class="empty" colspan="4">No data yet</td></tr>';
-
+ 
     $('bdConfluence').innerHTML = [
       ['Trend aligned', 'trendAligned'], ['FVG aligned', 'fvgAligned'],
       ['In session', 'inSession'], ['Trail used', 'usedTrail'],
@@ -378,7 +439,7 @@
       return `<tr><td class="name">${label}</td><td>${yes.n} / ${no.n}</td><td>${wrYes} vs ${wrNo}</td><td>${yes.avgR===null?'—':fmtR(yes.avgR)}</td></tr>`;
     }).join('');
   }
-
+ 
   function renderLog(list) {
     const body = $('logBody'), empty = $('logEmpty');
     if (!list.length) { body.innerHTML = ''; empty.style.display = 'block'; return; }
@@ -403,6 +464,7 @@
         <td class="mono">${fmtPrice(t.target)}</td>
         <td class="mono">${fmtPrice(t.exit)}</td>
         <td class="mono">${fmtR(t.r)}</td>
+        <td class="mono ${t.dollarPL>0?'dir-long':(t.dollarPL<0?'dir-short':'')}">${fmtDollar(t.dollarPL)}</td>
         <td><span class="pill ${pillClass}">${pillLabel}</span></td>
         <td>${confl}</td>
         <td><button class="ghost small edit-btn" data-id="${t.tradeId}">Edit</button><button class="ghost small del-btn" data-id="${t.tradeId}">Delete</button></td>
@@ -411,7 +473,7 @@
     body.querySelectorAll('.edit-btn').forEach(b => b.addEventListener('click', () => openEdit(b.dataset.id)));
     body.querySelectorAll('.del-btn').forEach(b => b.addEventListener('click', () => deleteTrade(b.dataset.id)));
   }
-
+ 
   // ---------- drawer / form ----------
   function openNew() {
     editingId = null;
@@ -443,13 +505,13 @@
     $('overlay').classList.add('open');
   }
   function closeDrawer() { $('overlay').classList.remove('open'); editingId = null; }
-
+ 
   $('newTradeBtn').addEventListener('click', openNew);
   $('cancelBtn').addEventListener('click', closeDrawer);
   $('overlay').addEventListener('click', (e) => { if (e.target.id === 'overlay') closeDrawer(); });
-
+ 
   function numOrEmpty(v) { return v === '' || v === null || v === undefined ? '' : Number(v); }
-
+ 
   async function postToBackend(payload) {
     return fetch(backendUrl, {
       method: 'POST',
@@ -457,7 +519,7 @@
       body: JSON.stringify(payload),
     });
   }
-
+ 
   $('tradeForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!backendUrl) { showSetupBanner(true); return; }
@@ -493,7 +555,7 @@
       $('saveBtn').disabled = false;
     }
   });
-
+ 
   async function deleteTrade(id) {
     if (!confirm('Delete this trade?')) return;
     try {
@@ -504,10 +566,11 @@
       alert('Could not delete trade.');
     }
   }
-
+ 
   if (backendUrl) loadTrades();
   startPolling();
 })();
 </script>
 </body>
 </html>
+ 
