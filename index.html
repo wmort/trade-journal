@@ -60,7 +60,7 @@
   .stat .value.win { color: var(--win); } .stat .value.loss { color: var(--loss); }
   @media (max-width: 900px) { .stat-grid { grid-template-columns: repeat(3, 1fr); } }
   @media (max-width: 560px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
-  .breakdown-grid { display: grid; grid-template-columns: 1fr 1fr 1.4fr; gap: 14px; }
+  .breakdown-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 24px; }
   @media (max-width: 900px) { .breakdown-grid { grid-template-columns: 1fr; } }
   table.bd { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   table.bd th { text-align: left; color: var(--text-dim); font-weight: 500; padding: 5px 6px; border-bottom: 1px solid var(--border); }
@@ -131,9 +131,9 @@
     <input type="text" id="backendUrlInput" placeholder="https://script.google.com/macros/s/XXXXXXXX/exec">
     <div class="hint" style="margin-top:12px;"><strong>Your name</strong> — shown on the shared leaderboard, and used to filter "My Trades" to just your own. Make it unique from everyone else in the group.</div>
     <input type="text" id="traderNameInput" placeholder="e.g. Alex">
-    <div class="hint" style="margin-top:12px;"><strong>Profit tracker</strong> — dollar value per point of your instrument, and how many contracts you trade. NQ = $20/point. Used to convert entry/exit prices into real $ P&L.</div>
+    <div class="hint" style="margin-top:12px;"><strong>Profit tracker</strong> — point values are built in per market (NQ $20, ES $50, YM $5, plus micros MNQ $2, MES $5, MYM $0.50). The point value box below is only a fallback for any other symbol. Contracts = how many you trade per signal.</div>
     <div class="row2" style="margin-top:8px;">
-      <input type="number" step="any" id="pointValueInput" placeholder="Point value ($), e.g. 20">
+      <input type="number" step="any" id="pointValueInput" placeholder="Fallback point value ($)">
       <input type="number" step="any" id="contractsInput" placeholder="Contracts, e.g. 1">
     </div>
     <div class="hint" style="margin-top:12px;"><strong>Eval account progress</strong> — your starting balance, profit target, and the starting drawdown floor (Lucid's floor trails upward as you bank profit, so treat this as a worst-case starting reference, not a fixed line).</div>
@@ -151,6 +151,13 @@
   </div>
 
   <div id="mineView">
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:16px;">
+      <label for="symbolFilter" style="font-size:12px; color:var(--text-dim);">Market</label>
+      <select id="symbolFilter" style="padding:7px 10px; border-radius:var(--radius); border:1px solid var(--border); background:var(--surface); color:var(--text); font-family:inherit; font-size:13px;">
+        <option value="ALL">All markets</option>
+      </select>
+    </div>
+
     <section class="panel" id="evalPanel" style="display:none;">
       <h2>Eval account progress</h2>
       <div id="evalWrap"></div>
@@ -166,6 +173,7 @@
     <section class="panel">
       <h2>Breakdown</h2>
       <div class="breakdown-grid">
+        <div><table class="bd"><thead><tr><th>Market (all trades)</th><th>N</th><th>Win%</th><th>Avg R</th><th>P&amp;L</th></tr></thead><tbody id="bdMarket"></tbody></table></div>
         <div><table class="bd"><thead><tr><th>Setup</th><th>N</th><th>Win%</th><th>Avg R</th></tr></thead><tbody id="bdSetup"></tbody></table></div>
         <div><table class="bd"><thead><tr><th>Direction</th><th>N</th><th>Win%</th><th>Avg R</th></tr></thead><tbody id="bdDirection"></tbody></table></div>
         <div><table class="bd"><thead><tr><th>Confluence</th><th>N</th><th>Win%</th><th>Avg R</th></tr></thead><tbody id="bdConfluence"></tbody></table></div>
@@ -360,18 +368,31 @@
   // Exact $ P&L per trade, computed from the actual logged entry/exit prices —
   // NOT derived from R, so it stays accurate even though stop distance (and
   // therefore $ risk) varies trade to trade with a fixed contract count.
+  // Dollar value per 1.00 point move, per futures root symbol (CME specs).
+  const POINT_VALUES = { NQ: 20, ES: 50, YM: 5, MNQ: 2, MES: 5, MYM: 0.5 };
+  // "NQ1!" -> "NQ", "ESZ2026" / "ESZ26" -> "ES", "YM1!" -> "YM"
+  function rootOf(symbol) {
+    let s = String(symbol || '').toUpperCase().trim();
+    s = s.replace(/\d+!$/, '');
+    s = s.replace(/[FGHJKMNQUVXZ]\d{1,4}$/, '');
+    return s || 'UNKNOWN';
+  }
+  function pointValueFor(symbol) {
+    const root = rootOf(symbol);
+    return POINT_VALUES[root] !== undefined ? POINT_VALUES[root] : pointValue;
+  }
   function computeDollarPL(t) {
     const entry = parseFloat(t.entry), exit = parseFloat(t.exit);
     if (isNaN(entry) || isNaN(exit)) return null;
     const pointsMoved = t.direction === 'long' ? (exit - entry) : (entry - exit);
-    return pointsMoved * pointValue * contracts;
+    return pointsMoved * pointValueFor(t.symbol) * contracts;
   }
   function enriched() {
     return trades.map(t => {
       const r = computeR(t);
       const result = computeResult(t, r);
       const dollarPL = computeDollarPL(t);
-      return Object.assign({}, t, { r, result, dollarPL });
+      return Object.assign({}, t, { r, result, dollarPL, market: rootOf(t.symbol) });
     });
   }
   function fmtR(r) { return r === null || r === undefined ? '—' : (r >= 0 ? '+' : '') + r.toFixed(2) + 'R'; }
@@ -394,9 +415,36 @@
     return { n, wins: wins.length, losses: losses.length, winRate, avgR, profitFactor, totalDollar };
   }
 
+  let selectedMarket = 'ALL';
+  function refreshMarketOptions(all) {
+    const sel = $('symbolFilter');
+    const markets = Array.from(new Set(all.filter(t => t.market !== 'TEST').map(t => t.market))).sort();
+    const wanted = ['ALL'].concat(markets);
+    const current = Array.from(sel.options).map(o => o.value);
+    if (wanted.join('|') !== current.join('|')) {
+      sel.innerHTML = '<option value="ALL">All markets</option>' + markets.map(m => `<option value="${m}">${m}</option>`).join('');
+      if (!wanted.includes(selectedMarket)) selectedMarket = 'ALL';
+      sel.value = selectedMarket;
+    }
+  }
+  $('symbolFilter').addEventListener('change', (e) => { selectedMarket = e.target.value; render(); });
+
   function render() {
-    const list = enriched();
-    renderStats(list); renderEvalProgress(list); renderEquity(list); renderBreakdowns(list); renderLog(list);
+    const all = enriched();
+    refreshMarketOptions(all);
+    const list = selectedMarket === 'ALL' ? all : all.filter(t => t.market === selectedMarket);
+    renderStats(list); renderEvalProgress(all); renderEquity(list); renderBreakdowns(list); renderMarketTable(all); renderLog(list);
+  }
+
+  function renderMarketTable(all) {
+    const markets = Array.from(new Set(all.filter(t => t.market !== 'TEST').map(t => t.market))).sort();
+    $('bdMarket').innerHTML = markets.map(m => {
+      const st = statsFor(all.filter(t => t.market === m));
+      const wr = st.winRate === null ? '—' : st.winRate.toFixed(0) + '%';
+      const ar = st.avgR === null ? '—' : fmtR(st.avgR);
+      const pl = st.totalDollar === null ? '—' : fmtDollar(st.totalDollar);
+      return `<tr><td class="name">${m}</td><td>${st.n}</td><td>${wr}</td><td>${ar}</td><td>${pl}</td></tr>`;
+    }).join('') || '<tr><td class="empty" colspan="5">No data yet</td></tr>';
   }
 
   function renderEvalProgress(list) {
@@ -442,7 +490,7 @@
       <div class="stat"><div class="label">Avg R</div><div class="value ${s.avgR>0?'win':(s.avgR<0?'loss':'')}">${avgRStr}</div></div>
       <div class="stat"><div class="label">Profit factor</div><div class="value">${pfStr}</div></div>
       <div class="stat"><div class="label">Wins / Losses</div><div class="value"><span style="color:var(--win)">${s.wins}</span> / <span style="color:var(--loss)">${s.losses}</span></div></div>
-      <div class="stat"><div class="label">Total P&amp;L (${contracts}x NQ)</div><div class="value ${s.totalDollar>0?'win':(s.totalDollar<0?'loss':'')}">${dollarStr}</div></div>`;
+      <div class="stat"><div class="label">Total P&amp;L (${contracts} contract${contracts === 1 ? '' : 's'})</div><div class="value ${s.totalDollar>0?'win':(s.totalDollar<0?'loss':'')}">${dollarStr}</div></div>`;
   }
 
   function renderEquity(list) {
