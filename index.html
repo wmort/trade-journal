@@ -112,7 +112,7 @@
 </style>
 </head>
 <body>
- 
+
 <div class="wrap">
   <header class="top">
     <div>
@@ -125,7 +125,7 @@
       <button class="primary" id="newTradeBtn">+ Log trade</button>
     </div>
   </header>
- 
+
   <div class="setup-banner" id="setupBanner" style="display:none;">
     <strong>One-time setup:</strong> paste your Google Apps Script Web App URL below (the one ending in <code>/exec</code>). This is also the URL you use as the Webhook URL in your TradingView alerts.
     <input type="text" id="backendUrlInput" placeholder="https://script.google.com/macros/s/XXXXXXXX/exec">
@@ -136,22 +136,33 @@
       <input type="number" step="any" id="pointValueInput" placeholder="Point value ($), e.g. 20">
       <input type="number" step="any" id="contractsInput" placeholder="Contracts, e.g. 1">
     </div>
+    <div class="hint" style="margin-top:12px;"><strong>Eval account progress</strong> — your starting balance, profit target, and the starting drawdown floor (Lucid's floor trails upward as you bank profit, so treat this as a worst-case starting reference, not a fixed line).</div>
+    <div class="row3" style="margin-top:8px;">
+      <input type="number" step="any" id="startBalInput" placeholder="Start, e.g. 25000">
+      <input type="number" step="any" id="targetBalInput" placeholder="Target, e.g. 26250">
+      <input type="number" step="any" id="floorBalInput" placeholder="Fail floor, e.g. 24000">
+    </div>
     <div style="margin-top:10px;"><button class="primary" id="saveUrlBtn">Save</button></div>
   </div>
- 
+
   <div class="tabbar" id="tabbar" style="display:flex; gap:8px; margin-bottom:16px;">
     <button id="tabMine" class="tab-btn">My Trades</button>
     <button id="tabLeaderboard" class="tab-btn">Leaderboard</button>
   </div>
- 
+
   <div id="mineView">
+    <section class="panel" id="evalPanel" style="display:none;">
+      <h2>Eval account progress</h2>
+      <div id="evalWrap"></div>
+    </section>
+
     <div class="stat-grid" id="statGrid"></div>
- 
+
     <section class="panel">
       <h2>Equity curve — cumulative R</h2>
       <div id="equityWrap"><div class="empty">Log a few closed trades to see your curve.</div></div>
     </section>
- 
+
     <section class="panel">
       <h2>Breakdown</h2>
       <div class="breakdown-grid">
@@ -160,7 +171,7 @@
         <div><table class="bd"><thead><tr><th>Confluence</th><th>N</th><th>Win%</th><th>Avg R</th></tr></thead><tbody id="bdConfluence"></tbody></table></div>
       </div>
     </section>
- 
+
     <section class="panel">
       <h2>Trade log</h2>
       <div class="log-scroll">
@@ -172,7 +183,7 @@
       </div>
     </section>
   </div>
- 
+
   <div id="leaderboardView" style="display:none;">
     <section class="panel">
       <h2>Group leaderboard — ranked by total R</h2>
@@ -185,10 +196,10 @@
       </div>
     </section>
   </div>
- 
+
   <footer><span class="status-dot" id="statusDot"></span><span id="statusText">Not connected</span></footer>
 </div>
- 
+
 <div class="overlay" id="overlay">
   <div class="drawer">
     <h3 id="drawerTitle">Log a trade</h3>
@@ -230,34 +241,40 @@
     </form>
   </div>
 </div>
- 
+
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
   const STORAGE_KEY = 'tj_backend_url';
   const POINT_VALUE_KEY = 'tj_point_value';
   const CONTRACTS_KEY = 'tj_contracts';
+  const START_BAL_KEY = 'tj_start_bal';
+  const TARGET_BAL_KEY = 'tj_target_bal';
+  const FLOOR_BAL_KEY = 'tj_floor_bal';
   let backendUrl = localStorage.getItem(STORAGE_KEY) || '';
   let pointValue = parseFloat(localStorage.getItem(POINT_VALUE_KEY)) || 20; // NQ default
   let contracts = parseFloat(localStorage.getItem(CONTRACTS_KEY)) || 1;
+  let startBal = parseFloat(localStorage.getItem(START_BAL_KEY)) || 25000;
+  let targetBal = parseFloat(localStorage.getItem(TARGET_BAL_KEY)) || 26250;
+  let floorBal = parseFloat(localStorage.getItem(FLOOR_BAL_KEY)) || 24000;
   let trades = [];
   let editingId = null;
   let pollTimer = null;
- 
+
   function todayStr() {
     const d = new Date();
     return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
   }
- 
+
   function setStatus(state, text) {
     $('statusDot').className = 'status-dot ' + state;
     $('statusText').textContent = text;
   }
- 
+
   function showSetupBanner(show) {
     $('setupBanner').style.display = show ? 'block' : 'none';
   }
- 
+
   if (!backendUrl) {
     showSetupBanner(true);
     setStatus('wait', 'Waiting for backend URL');
@@ -266,11 +283,14 @@
   } else {
     $('subtitle').textContent = 'Connected to your Google Sheet backend.';
   }
- 
+
   $('settingsBtn').addEventListener('click', () => {
     $('backendUrlInput').value = backendUrl;
     $('pointValueInput').value = pointValue;
     $('contractsInput').value = contracts;
+    if (startBal !== null) $('startBalInput').value = startBal;
+    if (targetBal !== null) $('targetBalInput').value = targetBal;
+    if (floorBal !== null) $('floorBalInput').value = floorBal;
     showSetupBanner(true);
   });
   $('saveUrlBtn').addEventListener('click', () => {
@@ -282,11 +302,17 @@
     if (!isNaN(pv) && pv > 0) { pointValue = pv; localStorage.setItem(POINT_VALUE_KEY, String(pv)); }
     const ct = parseFloat($('contractsInput').value);
     if (!isNaN(ct) && ct > 0) { contracts = ct; localStorage.setItem(CONTRACTS_KEY, String(ct)); }
+    const sb = parseFloat($('startBalInput').value);
+    if (!isNaN(sb)) { startBal = sb; localStorage.setItem(START_BAL_KEY, String(sb)); }
+    const tb = parseFloat($('targetBalInput').value);
+    if (!isNaN(tb)) { targetBal = tb; localStorage.setItem(TARGET_BAL_KEY, String(tb)); }
+    const fb = parseFloat($('floorBalInput').value);
+    if (!isNaN(fb)) { floorBal = fb; localStorage.setItem(FLOOR_BAL_KEY, String(fb)); }
     showSetupBanner(false);
     $('subtitle').textContent = 'Connected to your Google Sheet backend.';
     loadTrades();
   });
- 
+
   async function loadTrades() {
     if (!backendUrl) return;
     setStatus('wait', 'Loading…');
@@ -305,14 +331,14 @@
       setStatus('err', 'Could not reach backend — check the URL in Settings');
     }
   }
- 
+
   $('refreshBtn').addEventListener('click', loadTrades);
- 
+
   function startPolling() {
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = setInterval(loadTrades, 45000);
   }
- 
+
   // ---------- computation helpers (same logic as the claude.ai journal) ----------
   function toBool(v) { return v === true || v === 'true' || v === 'TRUE' || v === 1 || v === '1'; }
   function computeR(t) {
@@ -351,7 +377,7 @@
   function fmtR(r) { return r === null || r === undefined ? '—' : (r >= 0 ? '+' : '') + r.toFixed(2) + 'R'; }
   function fmtPrice(p) { return p === null || p === undefined || p === '' ? '—' : Number(p).toFixed(2); }
   function fmtDollar(v) { return v === null || v === undefined ? '—' : (v >= 0 ? '+$' : '-$') + Math.abs(v).toFixed(2); }
- 
+
   function statsFor(list) {
     const closed = list.filter(t => t.result === 'win' || t.result === 'loss' || t.result === 'be');
     const wins = closed.filter(t => t.result === 'win');
@@ -367,12 +393,43 @@
     const profitFactor = grossLoss > 0 ? (grossWin / grossLoss) : (grossWin > 0 ? Infinity : null);
     return { n, wins: wins.length, losses: losses.length, winRate, avgR, profitFactor, totalDollar };
   }
- 
+
   function render() {
     const list = enriched();
-    renderStats(list); renderEquity(list); renderBreakdowns(list); renderLog(list);
+    renderStats(list); renderEvalProgress(list); renderEquity(list); renderBreakdowns(list); renderLog(list);
   }
- 
+
+  function renderEvalProgress(list) {
+    const panel = $('evalPanel');
+    if (startBal === null || targetBal === null || floorBal === null) { panel.style.display = 'none'; return; }
+    panel.style.display = 'block';
+
+    const s = statsFor(list);
+    const currentBal = startBal + (s.totalDollar || 0);
+    const totalRange = targetBal - floorBal;
+    const posPct = totalRange > 0 ? Math.max(0, Math.min(100, ((currentBal - floorBal) / totalRange) * 100)) : 50;
+    const toTarget = targetBal - currentBal;
+    const toFloor = currentBal - floorBal;
+    const barColor = currentBal >= startBal ? 'var(--win)' : 'var(--loss)';
+
+    $('evalWrap').innerHTML = `
+      <div class="mono" style="font-size:22px; font-weight:700; margin-bottom:4px;">$${currentBal.toFixed(2)}</div>
+      <div class="hint" style="margin-bottom:14px;">
+        ${toTarget > 0 ? '$' + toTarget.toFixed(2) + ' to pass' : 'Target reached'} ·
+        ${toFloor > 0 ? '$' + toFloor.toFixed(2) + ' cushion above starting floor' : 'At or below starting floor'}
+      </div>
+      <div style="position:relative; height:10px; border-radius:6px; background:var(--surface-2); overflow:hidden;">
+        <div style="position:absolute; left:0; top:0; height:100%; width:${posPct}%; background:${barColor};"></div>
+      </div>
+      <div style="display:flex; justify-content:space-between; margin-top:6px; font-size:11px; color:var(--text-dim);" class="mono">
+        <span>Floor $${floorBal.toFixed(0)}</span>
+        <span>Start $${startBal.toFixed(0)}</span>
+        <span>Target $${targetBal.toFixed(0)}</span>
+      </div>
+      <div class="hint" style="margin-top:12px;">Floor shown is the starting drawdown line, not a live trailing value — your real floor moves up as you bank profitable days. Treat this as a worst-case reference.</div>
+    `;
+  }
+
   function renderStats(list) {
     const s = statsFor(list);
     const winRateStr = s.winRate === null ? '—' : s.winRate.toFixed(0) + '%';
@@ -387,7 +444,7 @@
       <div class="stat"><div class="label">Wins / Losses</div><div class="value"><span style="color:var(--win)">${s.wins}</span> / <span style="color:var(--loss)">${s.losses}</span></div></div>
       <div class="stat"><div class="label">Total P&amp;L (${contracts}x NQ)</div><div class="value ${s.totalDollar>0?'win':(s.totalDollar<0?'loss':'')}">${dollarStr}</div></div>`;
   }
- 
+
   function renderEquity(list) {
     const closed = list.filter(t => (t.result==='win'||t.result==='loss'||t.result==='be') && t.r !== null)
       .slice().sort((a,b) => String(a.date+(a.time||'')).localeCompare(String(b.date+(b.time||''))));
@@ -406,7 +463,7 @@
       <line x1="0" y1="${y(0).toFixed(1)}" x2="${w}" y2="${y(0).toFixed(1)}" stroke="var(--border)" stroke-width="1"/>
       <path d="${path}" fill="none" stroke="${last>=0?'var(--win)':'var(--loss)'}" stroke-width="2"/></svg>`;
   }
- 
+
   function breakdownRows(groups) {
     return Object.keys(groups).map(name => {
       const s = statsFor(groups[name]);
@@ -415,19 +472,19 @@
       return `<tr><td class="name">${name}</td><td>${s.n}</td><td>${wr}</td><td>${ar}</td></tr>`;
     }).join('');
   }
- 
+
   function renderBreakdowns(list) {
     $('bdSetup').innerHTML = breakdownRows({
       'SCE': list.filter(t => t.strategy === 'SCE'),
       'Failure': list.filter(t => t.strategy === 'FAIL'),
       'SMT Reversal': list.filter(t => t.strategy === 'SMT'),
     }) || '<tr><td class="empty" colspan="4">No data yet</td></tr>';
- 
+
     $('bdDirection').innerHTML = breakdownRows({
       'Long': list.filter(t => t.direction === 'long'),
       'Short': list.filter(t => t.direction === 'short'),
     }) || '<tr><td class="empty" colspan="4">No data yet</td></tr>';
- 
+
     $('bdConfluence').innerHTML = [
       ['Trend aligned', 'trendAligned'], ['FVG aligned', 'fvgAligned'],
       ['In session', 'inSession'], ['Trail used', 'usedTrail'],
@@ -439,7 +496,7 @@
       return `<tr><td class="name">${label}</td><td>${yes.n} / ${no.n}</td><td>${wrYes} vs ${wrNo}</td><td>${yes.avgR===null?'—':fmtR(yes.avgR)}</td></tr>`;
     }).join('');
   }
- 
+
   function renderLog(list) {
     const body = $('logBody'), empty = $('logEmpty');
     if (!list.length) { body.innerHTML = ''; empty.style.display = 'block'; return; }
@@ -473,7 +530,7 @@
     body.querySelectorAll('.edit-btn').forEach(b => b.addEventListener('click', () => openEdit(b.dataset.id)));
     body.querySelectorAll('.del-btn').forEach(b => b.addEventListener('click', () => deleteTrade(b.dataset.id)));
   }
- 
+
   // ---------- drawer / form ----------
   function openNew() {
     editingId = null;
@@ -505,13 +562,13 @@
     $('overlay').classList.add('open');
   }
   function closeDrawer() { $('overlay').classList.remove('open'); editingId = null; }
- 
+
   $('newTradeBtn').addEventListener('click', openNew);
   $('cancelBtn').addEventListener('click', closeDrawer);
   $('overlay').addEventListener('click', (e) => { if (e.target.id === 'overlay') closeDrawer(); });
- 
+
   function numOrEmpty(v) { return v === '' || v === null || v === undefined ? '' : Number(v); }
- 
+
   async function postToBackend(payload) {
     return fetch(backendUrl, {
       method: 'POST',
@@ -519,7 +576,7 @@
       body: JSON.stringify(payload),
     });
   }
- 
+
   $('tradeForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!backendUrl) { showSetupBanner(true); return; }
@@ -555,7 +612,7 @@
       $('saveBtn').disabled = false;
     }
   });
- 
+
   async function deleteTrade(id) {
     if (!confirm('Delete this trade?')) return;
     try {
@@ -566,11 +623,10 @@
       alert('Could not delete trade.');
     }
   }
- 
+
   if (backendUrl) loadTrades();
   startPolling();
 })();
 </script>
 </body>
 </html>
- 
