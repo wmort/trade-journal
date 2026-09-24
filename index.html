@@ -131,7 +131,24 @@
     <input type="text" id="backendUrlInput" placeholder="https://script.google.com/macros/s/XXXXXXXX/exec">
     <div class="hint" style="margin-top:12px;"><strong>Your name</strong> — shown on the shared leaderboard, and used to filter "My Trades" to just your own. Make it unique from everyone else in the group.</div>
     <input type="text" id="traderNameInput" placeholder="e.g. Alex">
-    <div class="hint" style="margin-top:12px;"><strong>Profit tracker</strong> — point values are built in per market (NQ $20, ES $50, YM $5, plus micros MNQ $2, MES $5, MYM $0.50). The point value box below is only a fallback for any other symbol. Contracts = how many you trade per signal.</div>
+    <div class="hint" style="margin-top:12px;"><strong>Profit tracker</strong> — pick the contract size you actually trade in each market. Your charts can stay on NQ1! / ES1! / YM1!; P&amp;L is calculated at whatever size you choose here. Contracts = how many you trade per signal.</div>
+    <div class="row3" style="margin-top:8px;">
+      <label style="display:flex; flex-direction:column; gap:4px; font-size:11px; color:var(--text-dim);">NQ
+        <select id="sizeNQInput" style="padding:8px 10px; border-radius:var(--radius); border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-family:inherit; font-size:13px;">
+          <option value="micro">Micro ($2/pt)</option>
+          <option value="mini">Mini ($20/pt)</option>
+        </select></label>
+      <label style="display:flex; flex-direction:column; gap:4px; font-size:11px; color:var(--text-dim);">ES
+        <select id="sizeESInput" style="padding:8px 10px; border-radius:var(--radius); border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-family:inherit; font-size:13px;">
+          <option value="micro">Micro ($5/pt)</option>
+          <option value="mini">Mini ($50/pt)</option>
+        </select></label>
+      <label style="display:flex; flex-direction:column; gap:4px; font-size:11px; color:var(--text-dim);">YM
+        <select id="sizeYMInput" style="padding:8px 10px; border-radius:var(--radius); border:1px solid var(--border); background:var(--surface-2); color:var(--text); font-family:inherit; font-size:13px;">
+          <option value="micro">Micro ($0.50/pt)</option>
+          <option value="mini">Mini ($5/pt)</option>
+        </select></label>
+    </div>
     <div class="row2" style="margin-top:8px;">
       <input type="number" step="any" id="pointValueInput" placeholder="Fallback point value ($)">
       <input type="number" step="any" id="contractsInput" placeholder="Contracts, e.g. 1">
@@ -262,6 +279,10 @@
   let backendUrl = localStorage.getItem(STORAGE_KEY) || '';
   let pointValue = parseFloat(localStorage.getItem(POINT_VALUE_KEY)) || 20; // NQ default
   let contracts = parseFloat(localStorage.getItem(CONTRACTS_KEY)) || 1;
+  // Mini vs micro per market. Defaults: NQ micro (MNQ), ES and YM mini until changed.
+  const SIZE_DEFAULTS = { NQ: 'micro', ES: 'mini', YM: 'mini' };
+  const sizes = {};
+  ['NQ', 'ES', 'YM'].forEach(m => { sizes[m] = localStorage.getItem('tj_size_' + m) || SIZE_DEFAULTS[m]; });
   let startBal = parseFloat(localStorage.getItem(START_BAL_KEY)) || 25000;
   let targetBal = parseFloat(localStorage.getItem(TARGET_BAL_KEY)) || 26250;
   let floorBal = parseFloat(localStorage.getItem(FLOOR_BAL_KEY)) || 24000;
@@ -288,6 +309,7 @@
     setStatus('wait', 'Waiting for backend URL');
     $('pointValueInput').value = pointValue;
     $('contractsInput').value = contracts;
+    ['NQ', 'ES', 'YM'].forEach(m => { $('size' + m + 'Input').value = sizes[m]; });
   } else {
     $('subtitle').textContent = 'Connected to your Google Sheet backend.';
   }
@@ -296,6 +318,7 @@
     $('backendUrlInput').value = backendUrl;
     $('pointValueInput').value = pointValue;
     $('contractsInput').value = contracts;
+    ['NQ', 'ES', 'YM'].forEach(m => { $('size' + m + 'Input').value = sizes[m]; });
     if (startBal !== null) $('startBalInput').value = startBal;
     if (targetBal !== null) $('targetBalInput').value = targetBal;
     if (floorBal !== null) $('floorBalInput').value = floorBal;
@@ -310,6 +333,7 @@
     if (!isNaN(pv) && pv > 0) { pointValue = pv; localStorage.setItem(POINT_VALUE_KEY, String(pv)); }
     const ct = parseFloat($('contractsInput').value);
     if (!isNaN(ct) && ct > 0) { contracts = ct; localStorage.setItem(CONTRACTS_KEY, String(ct)); }
+    ['NQ', 'ES', 'YM'].forEach(m => { sizes[m] = $('size' + m + 'Input').value; localStorage.setItem('tj_size_' + m, sizes[m]); });
     const sb = parseFloat($('startBalInput').value);
     if (!isNaN(sb)) { startBal = sb; localStorage.setItem(START_BAL_KEY, String(sb)); }
     const tb = parseFloat($('targetBalInput').value);
@@ -377,8 +401,16 @@
     s = s.replace(/[FGHJKMNQUVXZ]\d{1,4}$/, '');
     return s || 'UNKNOWN';
   }
+  // Market label for grouping: MNQ and NQ both show as "NQ", etc.
+  function marketOf(symbol) {
+    const r = rootOf(symbol);
+    return ({ MNQ: 'NQ', MES: 'ES', MYM: 'YM' })[r] || r;
+  }
+  const MICRO_OF = { NQ: 'MNQ', ES: 'MES', YM: 'MYM' };
   function pointValueFor(symbol) {
-    const root = rootOf(symbol);
+    let root = rootOf(symbol);
+    // A full-size chart (NQ/ES/YM) is priced at micro value if that market is set to Micro.
+    if (MICRO_OF[root] && sizes[root] === 'micro') root = MICRO_OF[root];
     return POINT_VALUES[root] !== undefined ? POINT_VALUES[root] : pointValue;
   }
   function computeDollarPL(t) {
@@ -392,7 +424,7 @@
       const r = computeR(t);
       const result = computeResult(t, r);
       const dollarPL = computeDollarPL(t);
-      return Object.assign({}, t, { r, result, dollarPL, market: rootOf(t.symbol) });
+      return Object.assign({}, t, { r, result, dollarPL, market: marketOf(t.symbol) });
     });
   }
   function fmtR(r) { return r === null || r === undefined ? '—' : (r >= 0 ? '+' : '') + r.toFixed(2) + 'R'; }
