@@ -191,6 +191,7 @@
       <h2>Breakdown</h2>
       <div class="breakdown-grid">
         <div><table class="bd"><thead><tr><th>Market (all trades)</th><th>N</th><th>Win%</th><th>Avg R</th><th>P&amp;L</th></tr></thead><tbody id="bdMarket"></tbody></table></div>
+        <div><table class="bd"><thead><tr><th>ORB session</th><th>N</th><th>Win%</th><th>Avg R</th><th>P&amp;L</th></tr></thead><tbody id="bdSession"></tbody></table></div>
         <div><table class="bd"><thead><tr><th>Setup</th><th>N</th><th>Win%</th><th>Avg R</th></tr></thead><tbody id="bdSetup"></tbody></table></div>
         <div><table class="bd"><thead><tr><th>Direction</th><th>N</th><th>Win%</th><th>Avg R</th></tr></thead><tbody id="bdDirection"></tbody></table></div>
         <div><table class="bd"><thead><tr><th>Confluence</th><th>N</th><th>Win%</th><th>Avg R</th></tr></thead><tbody id="bdConfluence"></tbody></table></div>
@@ -238,7 +239,7 @@
         <div class="field"><label>Direction</label><select id="f_direction"><option value="long">Long</option><option value="short">Short</option></select></div>
       </div>
       <div class="field"><label>Setup type</label>
-        <select id="f_setup"><option value="SCE">SCE (standard / valid engulfing)</option><option value="FAIL">Failure (weak engulfing fade)</option><option value="SMT">SMT Reversal (manipulation + displacement)</option></select>
+        <select id="f_setup"><option value="SCE">SCE (standard / valid engulfing)</option><option value="FAIL">Failure (weak engulfing fade)</option><option value="SMT">SMT Reversal (manipulation + displacement)</option><option value="ORB">ORB (opening range breakout)</option></select>
       </div>
       <div class="row3">
         <div class="field"><label>Entry</label><input type="number" step="any" id="f_entry"></div>
@@ -417,7 +418,11 @@
     const entry = parseFloat(t.entry), exit = parseFloat(t.exit);
     if (isNaN(entry) || isNaN(exit)) return null;
     const pointsMoved = t.direction === 'long' ? (exit - entry) : (entry - exit);
-    return pointsMoved * pointValueFor(t.symbol) * contracts;
+    // Use the contracts logged with the trade when present (ORB sizes vary per trade);
+    // otherwise fall back to the Contracts setting.
+    const q = parseFloat(t.qty);
+    const n = (!isNaN(q) && q > 0) ? q : contracts;
+    return pointsMoved * pointValueFor(t.symbol) * n;
   }
   function enriched() {
     return trades.map(t => {
@@ -465,7 +470,18 @@
     const all = enriched();
     refreshMarketOptions(all);
     const list = selectedMarket === 'ALL' ? all : all.filter(t => t.market === selectedMarket);
-    renderStats(list); renderEvalProgress(all); renderEquity(list); renderBreakdowns(list); renderMarketTable(all); renderLog(list);
+    renderStats(list); renderEvalProgress(all); renderEquity(list); renderBreakdowns(list); renderMarketTable(all); renderSessionTable(list); renderLog(list);
+  }
+
+  function renderSessionTable(list) {
+    const rows = ['Asia', 'London', 'NY'].map(sess => {
+      const st = statsFor(list.filter(t => t.strategy === 'ORB' && t.session === sess));
+      const wr = st.winRate === null ? '—' : st.winRate.toFixed(0) + '%';
+      const ar = st.avgR === null ? '—' : fmtR(st.avgR);
+      const pl = st.totalDollar === null ? '—' : fmtDollar(st.totalDollar);
+      return `<tr><td class="name">${sess}</td><td>${st.n}</td><td>${wr}</td><td>${ar}</td><td>${pl}</td></tr>`;
+    });
+    $('bdSession').innerHTML = rows.join('');
   }
 
   function renderMarketTable(all) {
@@ -558,6 +574,7 @@
       'SCE': list.filter(t => t.strategy === 'SCE'),
       'Failure': list.filter(t => t.strategy === 'FAIL'),
       'SMT Reversal': list.filter(t => t.strategy === 'SMT'),
+      'ORB': list.filter(t => t.strategy === 'ORB'),
     }) || '<tr><td class="empty" colspan="4">No data yet</td></tr>';
 
     $('bdDirection').innerHTML = breakdownRows({
@@ -568,9 +585,14 @@
     $('bdConfluence').innerHTML = [
       ['Trend aligned', 'trendAligned'], ['FVG aligned', 'fvgAligned'],
       ['In session', 'inSession'], ['Trail used', 'usedTrail'],
+      ['HTF bias aligned', 'htfAligned'], ['Sweep before entry', 'sweepAligned'],
+      ['ORB aligned', 'orbAligned'],
     ].map(([label, key]) => {
-      const yes = statsFor(list.filter(t => toBool(t[key])));
-      const no = statsFor(list.filter(t => !toBool(t[key])));
+      // Only count trades that actually recorded this confluence (older trades
+      // logged before it existed have a blank value and are left out).
+      const has = list.filter(t => t[key] !== '' && t[key] !== undefined && t[key] !== null);
+      const yes = statsFor(has.filter(t => toBool(t[key])));
+      const no = statsFor(has.filter(t => !toBool(t[key])));
       const wrYes = yes.winRate === null ? '—' : yes.winRate.toFixed(0) + '%';
       const wrNo = no.winRate === null ? '—' : no.winRate.toFixed(0) + '%';
       return `<tr><td class="name">${label}</td><td>${yes.n} / ${no.n}</td><td>${wrYes} vs ${wrNo}</td><td>${yes.avgR===null?'—':fmtR(yes.avgR)}</td></tr>`;
